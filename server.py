@@ -19,9 +19,10 @@ def recebe_arquivo(endereco_cliente):
         packet, addr = sock.recvfrom(BUFFER_TAMANHO)
        
         if(packet == ACK ):
-            print(f"Conexão instabelecida com o cliente {addr}, enviando ACK")
+            print(f"Conexão estabelecida com o cliente {addr}, enviando ACK")
             sock.sendto(ACK, endereco_cliente)
             dados_recebidos = {}
+            arrayACKs = {}
             sequencia_acks_esperada = 0
             
             while True:
@@ -32,27 +33,38 @@ def recebe_arquivo(endereco_cliente):
                         sock.sendto(ACK, endereco_cliente)
                         break
                     
-                    seq_num = int.from_bytes(packet[:4], 'big')
+                    numero_sequencia_pacote = int.from_bytes(packet[:4], 'big')
                     data = packet[4:-4]
                     crc = int.from_bytes(packet[-4:], 'big')
                     
                     if zlib.crc32(data) == crc:
-                        if seq_num == sequencia_acks_esperada:
-                            dados_recebidos[seq_num] = data
+                        if numero_sequencia_pacote == sequencia_acks_esperada:
+                            dados_recebidos[numero_sequencia_pacote] = data
                             sequencia_acks_esperada += 1
-                            ack = (seq_num + 1).to_bytes(4, 'big')
+                            ack = (numero_sequencia_pacote + 1).to_bytes(4, 'big')
                             sock.sendto(ack, endereco_cliente)
-                            print(f"Recebido pacote {seq_num}, enviado ACK {seq_num + 1}")
+                            print(f"Recebido pacote {numero_sequencia_pacote}, enviado ACK {numero_sequencia_pacote + 1}")
+                            
+                            while sequencia_acks_esperada < len(arrayACKs):
+                                    if arrayACKs[i] == True:
+                                        sequencia_acks_esperada+=1
+                                        ack = (numero_sequencia_pacote + 1).to_bytes(4, 'big')
+                                        sock.sendto(ack, endereco_cliente)
+                                        print(f"Recebido pacote {numero_sequencia_pacote}, enviado ACK {numero_sequencia_pacote + 1}")
+                                    else:
+                                        break
                         else:
-                            ack = sequencia_acks_esperada.to_bytes(4, 'big')
-                            sock.sendto(ack, endereco_cliente)
-                            print(f"Pacote fora de ordem {seq_num}, reenviado ACK {sequencia_acks_esperada}")
+                            dados_recebidos[numero_sequencia_pacote] = data
+                            arrayACKs[numero_sequencia_pacote] = True
+                            print(f"Pacote fora de ordem {numero_sequencia_pacote}, salvando no array de ACKs {sequencia_acks_esperada}")
                     else:
-                        print(f"Erro de CRC no pacote {seq_num}, descartado")
+                        print(f"Erro de CRC no pacote {numero_sequencia_pacote}, descartado")
                         
-            with open('Arquivo_recebido.txt', 'wb') as f:
-                for seq_num in sorted(dados_recebidos.keys()):
-                    f.write(dados_recebidos[seq_num])
+            with open('Arquivo_recebido.txt', 'wb') as arquivo:
+                i=0
+                while i in dados_recebidos:
+                    arquivo.write(dados_recebidos[i])
+                    i += 1
             print(f"Conexão encerrada.")    
             print(f"Arquivo salvo!")
 

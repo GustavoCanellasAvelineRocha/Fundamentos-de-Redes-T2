@@ -9,10 +9,10 @@ SERVER_PORT = 12345
 CLIENT_PORT = 12346
 BUFFER_TAMANHO = 1024
 LIMITE_SLOW_START = 16
-PROBABILIDADE_DE_ERRO = 0.1  
+PROBABILIDADE_DE_ERRO = 0.1
 TAMANHO_DO_PACOTE = 10
 TIMEOUT = 1  
-ARQUIVO = '100_bytes.txt'
+ARQUIVO = '500_bytes.txt'
 
 ACK = b'ACK'
 FIN = b'FIN'
@@ -25,67 +25,102 @@ def envia_arquivo(endereco_servidor):
         sock.sendto(ACK, endereco_servidor)
         packet, addr = sock.recvfrom(BUFFER_TAMANHO)
         
-        if(packet == ACK ):
-            print(f"Conexão instabelecida com o servidor {addr}, iniciando envio de Pacotes...")
+        if packet == ACK:
+            print(f"Conexão estabelecida com o servidor {addr}, iniciando envio de Pacotes...")
             
             with open(ARQUIVO, 'rb') as arquivo:
+                sequenciaDados = 0
+                arrayDados = {}
+                arrayACKs = {}
                 sequencia = 0
                 janela = 1
-                dadosRestransmitir = None
+                dadosRestransmitir = False
 
                 while True:
                     for _ in range(janela):
-                        if dadosRestransmitir is None:
-                            dados = arquivo.read(TAMANHO_DO_PACOTE)
-                            if not dados:
-                                break
-                            crc = zlib.crc32(dados)
-                            pacote = sequencia.to_bytes(4, 'big') + dados + crc.to_bytes(4, 'big')
-                        else:
-                            pacote = dadosRestransmitir
+                        dados = arquivo.read(TAMANHO_DO_PACOTE)
+                        if not dados:
+                            break
+                        arrayDados[sequenciaDados] = dados
+                        crc = zlib.crc32(dados)
+                        pacote = sequenciaDados.to_bytes(4, 'big') + dados + crc.to_bytes(4, 'big')
                             
                         # Calculo de erro
                         if random.random() < PROBABILIDADE_DE_ERRO:
+                            print(f"Pacote com erro {sequenciaDados}")
                             error_index = random.randint(0, len(pacote) - 1)
                             pacote = pacote[:error_index] + bytes([pacote[error_index] ^ 0xFF]) + pacote[error_index + 1:]
-                            dadosRestransmitir = pacote
-                        else:
-                            dadosRestransmitir = None
 
                         sock.sendto(pacote, endereco_servidor)
-                        print(f"Enviado pacote {sequencia}")
-                        sequencia += 1
-
-                    if not dados and dadosRestransmitir is None:
-                        break
-                        
-                    sequencia-=janela
-                    for _ in range(janela):
+                        print(f"Enviado pacote {sequenciaDados}")
+                        sequenciaDados += 1
+                    
+                    i = 0
+                    while i < janela:
                         try:
                             sock.settimeout(TIMEOUT)
                             ack, _ = sock.recvfrom(BUFFER_TAMANHO)
                             ack_num = int.from_bytes(ack, 'big')
+                            print(f'ACK recebido {ack_num}')
                             if ack_num == sequencia + 1:
+                                arrayACKs[ack_num-1] = True
                                 sequencia += 1
-                                if janela < LIMITE_SLOW_START:
-                                    janela *= 2
-                                else:
-                                    janela += 1
-                                dadosRestransmitir = None
+                                i += 1
+                                j = sequencia
+                                while j < len(arrayACKs):
+                                    if arrayACKs[j] == True:
+                                        j += 1
+                                        sequencia += 1
+                                    else:
+                                        break
+                            elif ack_num > sequencia + 1: 
+                                arrayACKs[ack_num-1] = True
+                                i += 1
                             else:
                                 raise socket.timeout
                         except socket.timeout:
+                            dadosRestransmitir = True
                             print(f"Timeout no pacote {sequencia}, reiniciando Slow Start")
-                            janela = 1
-                            break
+                            
+                            dados = arrayDados.get(sequencia)
+                            if not dados:
+                                 break
+                            crc = zlib.crc32(dados)
+                            pacote = sequencia.to_bytes(4, 'big') + dados + crc.to_bytes(4, 'big')
+                                
+                            # Calculo de erro
+                            if random.random() < PROBABILIDADE_DE_ERRO:
+                                error_index = random.randint(0, len(pacote) - 1)
+                                pacote = pacote[:error_index] + bytes([pacote[error_index] ^ 0xFF]) + pacote[error_index + 1:]
+
+                            sock.sendto(pacote, endereco_servidor)
+                            print(f"Enviado pacote {sequencia}")
+                            
+                    if not dados:
+                        break
+                    if dadosRestransmitir:
+                        janela = 1
+                        dadosRestransmitir = False
+                    else: 
+                        if janela < LIMITE_SLOW_START:
+                            janela *= 2
+                        else:
+                            janela += 1
 
                 sock.sendto(FIN, endereco_servidor)
                 print("FIN enviado")
-                packet, addr = sock.recvfrom(BUFFER_TAMANHO)
-                if(packet == ACK ):
-                    print(f"ACK recebido, conexão encerrada.")
-                else:
-                    print(f"Erro na desconexão")
+                while True:
+                    try:
+                        sock.settimeout(TIMEOUT)
+                        packet, addr = sock.recvfrom(BUFFER_TAMANHO)
+                        if packet == ACK:
+                            print(f"ACK recebido, conexão encerrada.")
+                            break
+                        else:
+                            print(f"Erro na desconexão, pacote inesperado recebido: {packet}")
+                    except socket.timeout:
+                        print(f"Timeout aguardando ACK, reenviando FIN...")
+                        sock.sendto(FIN, endereco_servidor)
         else:
             print(f"Erro na Conexão")
 
