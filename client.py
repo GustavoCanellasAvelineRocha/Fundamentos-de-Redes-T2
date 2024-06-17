@@ -30,6 +30,7 @@ def envia_arquivo(endereco_servidor):
             
             with open(ARQUIVO, 'rb') as arquivo:
                 sequenciaDados = 0
+                ultimoPacote = -1
                 arrayDados = {}
                 arrayACKs = {}
                 sequencia = 0
@@ -37,9 +38,11 @@ def envia_arquivo(endereco_servidor):
                 dadosRestransmitir = False
 
                 while True:
+                    print(f"Enviando Arquivos, tamanho da janela atual {janela}")
                     for _ in range(janela):
                         dados = arquivo.read(TAMANHO_DO_PACOTE)
                         if not dados:
+                            ultimoPacote = sequenciaDados
                             break
                         arrayDados[sequenciaDados] = dados
                         crc = zlib.crc32(dados)
@@ -48,7 +51,7 @@ def envia_arquivo(endereco_servidor):
                         # Calculo de erro
                         if random.random() < PROBABILIDADE_DE_ERRO:
                             print(f"Pacote com erro {sequenciaDados}")
-                            error_index = random.randint(0, len(pacote) - 1)
+                            error_index = random.randint(4, len(pacote) - 1) 
                             pacote = pacote[:error_index] + bytes([pacote[error_index] ^ 0xFF]) + pacote[error_index + 1:]
 
                         sock.sendto(pacote, endereco_servidor)
@@ -58,12 +61,14 @@ def envia_arquivo(endereco_servidor):
                     i = 0
                     while i < janela:
                         try:
+                            if sequencia == ultimoPacote:
+                                break
                             sock.settimeout(TIMEOUT)
                             ack, _ = sock.recvfrom(BUFFER_TAMANHO)
                             ack_num = int.from_bytes(ack, 'big')
                             print(f'ACK recebido {ack_num}')
                             if ack_num == sequencia + 1:
-                                arrayACKs[ack_num-1] = True
+                                arrayACKs[ack_num - 1] = True
                                 sequencia += 1
                                 i += 1
                                 j = sequencia
@@ -73,35 +78,35 @@ def envia_arquivo(endereco_servidor):
                                         sequencia += 1
                                     else:
                                         break
-                            elif ack_num > sequencia + 1: 
-                                arrayACKs[ack_num-1] = True
+                            elif ack_num > sequencia + 1:
+                                arrayACKs[ack_num - 1] = True
                                 i += 1
                             else:
                                 raise socket.timeout
+                            sock.settimeout(TIMEOUT)
                         except socket.timeout:
                             dadosRestransmitir = True
-                            print(f"Timeout no pacote {sequencia}, reiniciando Slow Start")
+                            print(f"Timeout no pacote {sequencia}")
                             
                             dados = arrayDados.get(sequencia)
-                            if not dados:
-                                 break
                             crc = zlib.crc32(dados)
                             pacote = sequencia.to_bytes(4, 'big') + dados + crc.to_bytes(4, 'big')
                                 
                             # Calculo de erro
                             if random.random() < PROBABILIDADE_DE_ERRO:
-                                error_index = random.randint(0, len(pacote) - 1)
+                                error_index = random.randint(4, len(pacote) - 1) 
                                 pacote = pacote[:error_index] + bytes([pacote[error_index] ^ 0xFF]) + pacote[error_index + 1:]
 
                             sock.sendto(pacote, endereco_servidor)
-                            print(f"Enviado pacote {sequencia}")
+                            print(f"Reenviado pacote {sequencia}")
                             
-                    if not dados:
+                    if sequencia == ultimoPacote:
                         break
                     if dadosRestransmitir:
                         janela = 1
                         dadosRestransmitir = False
-                    else: 
+                        print(f"Houve reetransmissao, reiniciando Slow Start.")
+                    else:
                         if janela < LIMITE_SLOW_START:
                             janela *= 2
                         else:
