@@ -1,3 +1,5 @@
+#Alunos: Gustavo Canellas Aveline Rocha, Leonardo P Ramos e Rodrigo Rosa Renck
+
 import socket
 import time
 import zlib
@@ -9,9 +11,9 @@ SERVER_PORT = 12345
 CLIENT_PORT = 12346
 BUFFER_TAMANHO = 1024
 LIMITE_SLOW_START = 16
-PROBABILIDADE_DE_ERRO = 0.1
+PROBABILIDADE_DE_ERRO = 0.05
 TAMANHO_DO_PACOTE = 10
-TIMEOUT = 1  
+TIMEOUT = 7  
 ARQUIVO = '500_bytes.txt'
 
 ACK = b'ACK'
@@ -20,8 +22,8 @@ FIN = b'FIN'
 def envia_arquivo(endereco_servidor):
     print("Cliente iniciado!")
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.bind(('', CLIENT_PORT))
         print("Estabelecendo Conexão!")
+        sock.bind(('', CLIENT_PORT))
         sock.sendto(ACK, endereco_servidor)
         packet, addr = sock.recvfrom(BUFFER_TAMANHO)
         
@@ -39,6 +41,7 @@ def envia_arquivo(endereco_servidor):
 
                 while True:
                     print(f"Enviando Arquivos, tamanho da janela atual {janela}")
+                    time.sleep(3)
                     for _ in range(janela):
                         dados = arquivo.read(TAMANHO_DO_PACOTE)
                         if not dados:
@@ -51,12 +54,17 @@ def envia_arquivo(endereco_servidor):
                         # Calculo de erro
                         if random.random() < PROBABILIDADE_DE_ERRO:
                             print(f"Pacote com erro {sequenciaDados}")
+                            time.sleep(3)
                             error_index = random.randint(4, len(pacote) - 1) 
                             pacote = pacote[:error_index] + bytes([pacote[error_index] ^ 0xFF]) + pacote[error_index + 1:]
 
                         sock.sendto(pacote, endereco_servidor)
                         print(f"Enviado pacote {sequenciaDados}")
                         sequenciaDados += 1
+                        
+                    time.sleep(3)
+                    print(f"Pacotes enviados, recebendo acks...")
+                    time.sleep(3)
                     
                     i = 0
                     while i < janela:
@@ -72,8 +80,11 @@ def envia_arquivo(endereco_servidor):
                                 sequencia += 1
                                 i += 1
                                 j = sequencia
+                                
+                                #Lógica de segurança contra concorrencia
                                 while j < len(arrayACKs):
-                                    if arrayACKs[j] == True:
+                                    if arrayACKs.get(j, False) == True:
+                                        print(f'ACK recebido {j}')
                                         j += 1
                                         sequencia += 1
                                     else:
@@ -87,6 +98,7 @@ def envia_arquivo(endereco_servidor):
                         except socket.timeout:
                             dadosRestransmitir = True
                             print(f"Timeout no pacote {sequencia}")
+                            time.sleep(3)
                             
                             dados = arrayDados.get(sequencia)
                             crc = zlib.crc32(dados)
@@ -94,6 +106,7 @@ def envia_arquivo(endereco_servidor):
                                 
                             # Calculo de erro
                             if random.random() < PROBABILIDADE_DE_ERRO:
+                                print(f"Pacote com erro na retransmissao {sequencia}")
                                 error_index = random.randint(4, len(pacote) - 1) 
                                 pacote = pacote[:error_index] + bytes([pacote[error_index] ^ 0xFF]) + pacote[error_index + 1:]
 
@@ -106,6 +119,7 @@ def envia_arquivo(endereco_servidor):
                         janela = 1
                         dadosRestransmitir = False
                         print(f"Houve reetransmissao, reiniciando Slow Start.")
+                        time.sleep(3)
                     else:
                         if janela < LIMITE_SLOW_START:
                             janela *= 2
@@ -114,6 +128,7 @@ def envia_arquivo(endereco_servidor):
 
                 sock.sendto(FIN, endereco_servidor)
                 print("FIN enviado")
+                time.sleep(3)
                 while True:
                     try:
                         sock.settimeout(TIMEOUT)

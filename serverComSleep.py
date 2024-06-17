@@ -1,3 +1,5 @@
+#Alunos: Gustavo Canellas Aveline Rocha, Leonardo P Ramos e Rodrigo Rosa Renck
+
 import socket
 import zlib
 import time
@@ -14,9 +16,10 @@ FIN = b'FIN'
 
 def recebe_arquivo(endereco_cliente):
     print("Servidor iniciado!")
+    
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock: 
-        sock.bind((SERVER_IP, SERVER_PORT))
         print(f"Aguardando Conexão...")
+        sock.bind((SERVER_IP, SERVER_PORT))
         packet, addr = sock.recvfrom(BUFFER_TAMANHO)
        
         if(packet == ACK ):
@@ -46,20 +49,24 @@ def recebe_arquivo(endereco_cliente):
                             ack = (numero_sequencia_pacote + 1).to_bytes(4, 'big')
                             sock.sendto(ack, endereco_cliente)
                             print(f"Recebido pacote {numero_sequencia_pacote}, enviado ACK {numero_sequencia_pacote + 1}")
+                            time.sleep(3)
                             while sequencia_pacotes_esperada < len(arrayACKs):
                                     if arrayACKs.get(sequencia_pacotes_esperada, False) == True:
                                         sequencia_pacotes_esperada+=1
                                         ack = (sequencia_pacotes_esperada).to_bytes(4, 'big')
                                         sock.sendto(ack, endereco_cliente)
                                         print(f"Recebido pacote {sequencia_pacotes_esperada}, enviado ACK {sequencia_pacotes_esperada + 1}")
+                                        time.sleep(3)
                                     else:
                                         break
                         else:
                             dados_recebidos[numero_sequencia_pacote] = data
                             arrayACKs[numero_sequencia_pacote] = True
                             print(f"Pacote fora de ordem {numero_sequencia_pacote}, salvando no array de ACKs {numero_sequencia_pacote}")
+                            time.sleep(3)
                     else:
                         print(f"Erro de CRC no pacote {numero_sequencia_pacote}, descartado")
+                        time.sleep(3)
                         
             with open('Arquivo_recebido.txt', 'wb') as arquivo:
                 i=0
